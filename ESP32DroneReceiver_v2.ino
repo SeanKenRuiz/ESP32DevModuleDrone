@@ -15,56 +15,7 @@
 #include <esp_now.h>
 #include <WiFi.h>
 
-// ESP32 library to interface with drone motors
-#include <ESP32Servo.h>
-
-// I2C communication
-#include <Wire.h>
-
-// D
-float RateRoll, RatePitch, RateYaw;
-float RateCalibrationRoll, RateCalibrationPitch, RateCalibrationYaw;
-int RateCalibrationNumber;
-float AccX, AccY, AccZ;
-float AngleRoll, AnglePitch;
-uint32_t LoopTimer; // variable to track loop times
-
-// Define predicted angles and the uncertainties
-float KalmanAngleRoll = 0, KalmanUncertaintyAngleRoll = 2*2;
-float KalmanAnglePitch = 0, KalmanUncertaintyAnglePitch = 2*2;
-float Kalman1DOutput[] = {0, 0};
-
-// function to calculate the predicted angle and uncretainty using Kalman equations
-void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
-  // Predict the current state
-  KalmanState = KalmanState + 0.004 * KalmanInput;
-  // Calculate the uncertainty
-  KalmanUncertainty = KalmanUncertainty + 0.004 * 0.004 * 4 * 4;
-  // Calculate the Kalman gain from the uncertainties on predictions and measurements
-  float KalmanGain = KalmanUncertainty * 1 / (1 * KalmanUncertainty + 3 * 3);
-  // Update the predicted state of the system with measurements of the state through the Kalman gain
-  KalmanState = KalmanState + KalmanGain * (KalmanMeasurement - KalmanState);
-  // Update the uncertainty of predicted state 
-  KalmanUncertainty = (1 - KalmanGain) * KalmanUncertainty;
-
-  // Kalman filter output
-  Kalman1DOutput[0] = KalmanState;
-  Kalman1DOutput[1] = KalmanUncertainty;
-}
-
-// PID Controller Variables
-float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
-float ErrorRateRoll, ErrorRatePitch, ErrorRateYaw;
-float InputRoll, InputThrottle, InputPitch, InputYaw;
-float PrevErrorRateRoll, PrevErrorRatePitch, PrevErrorRateYaw;
-float PrevItermRateRoll, PrevItermRatePitch, PrevItermRateYaw;
-float PIDReturn[] = {0,0,0};
-
-float PRateRoll = 0.6; float PRatePitch = PRateRoll; float PRateYaw = 2;
-float IRateRoll = 3.5; float IRatePitch = IRateRoll; float IRateYaw = 12;
-float DRateRoll = 0.03; float DRatePitch = DRateRoll; float DRateYaw = 0;
-
-float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
+uint8_t broadcastAddress[] = {0xa0, 0xb7, 0x65, 0xdd, 0xf3, 0x60};
 
 // -- Receiving data from transmitter ESP32 --
 
@@ -79,6 +30,30 @@ typedef struct struct_message {
 
 // Create a struct_message called myData
 struct_message myData;
+
+typedef struct struct_onboardData {
+  int Motor_1;
+  int Motor_2;
+  int Motor_3;
+  int Motor_4;
+  float AnglePitch;
+  float PIDOutputPitch;
+  float ErrorPitch;
+} struct_onboardData;
+
+// onboardData struct_message 
+struct_onboardData onboardData;
+
+esp_now_peer_info_t peerInfo;
+
+
+// callback function that will be executed when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t) {
+  //Serial.print("Motor 1 (TL):");
+  //Serial.print("Motor 2 (TR):");
+  //Serial.print("Motor 3 (BL):");
+  //Serial.print("Motor 4 (BR):");
+}
 
 // callback function that will be executed when data is received
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
@@ -97,6 +72,53 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   Serial.println();
   */
 }
+
+// ESP32 library to interface with drone motors
+#include <ESP32Servo.h>
+
+// I2C communication
+#include <Wire.h>
+
+// Gyro + Acceleratometer Variables
+float RateRoll, RatePitch, RateYaw;
+float RateCalibrationRoll, RateCalibrationPitch, RateCalibrationYaw;
+int RateCalibrationNumber;
+float AccX, AccY, AccZ;
+float AngleRoll, AnglePitch;
+uint32_t LoopTimer; // variable to track loop times
+
+// Define predicted angles and the uncertainties
+float KalmanAngleRoll = 0, KalmanUncertaintyAngleRoll = 2*2;
+float KalmanAnglePitch = 0, KalmanUncertaintyAnglePitch = 2*2;
+float Kalman1DOutput[] = {0, 0};
+
+// function to calculate the predicted angle and uncretainty using Kalman equations
+void kalman_1d(float &KalmanState, float &KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
+  // Predict the current state
+  KalmanState = KalmanState + 0.004 * KalmanInput;
+  // Calculate the uncertainty
+  KalmanUncertainty = KalmanUncertainty + 0.004 * 0.004 * 4 * 4;
+  // Calculate the Kalman gain from the uncertainties on predictions and measurements
+  float KalmanGain = KalmanUncertainty * 1 / (1 * KalmanUncertainty + 3 * 3);
+  // Update the predicted state of the system with measurements of the state through the Kalman gain
+  KalmanState = KalmanState + KalmanGain * (KalmanMeasurement - KalmanState);
+  // Update the uncertainty of predicted state 
+  KalmanUncertainty = (1 - KalmanGain) * KalmanUncertainty;
+}
+
+// PID Controller Variables
+float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
+float ErrorRateRoll, ErrorRatePitch, ErrorRateYaw;
+float InputRoll, InputThrottle, InputPitch, InputYaw;
+float PrevErrorRateRoll, PrevErrorRatePitch, PrevErrorRateYaw;
+float PrevItermRateRoll, PrevItermRatePitch, PrevItermRateYaw;
+float PIDReturn[] = {0,0,0};
+
+float PRateRoll = 4.0; float PRatePitch = PRateRoll; float PRateYaw = 0;
+float IRateRoll = 0.00; float IRatePitch = IRateRoll; float IRateYaw = 0.0;
+float DRateRoll = 0.12; float DRatePitch = DRateRoll; float DRateYaw = 0.0;
+
+float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
 
 // Interfacing with MPU6050's gyroscope
 void gyro_signals(void){
@@ -137,17 +159,31 @@ void gyro_signals(void){
   int16_t GyroY = Wire.read()<<8 | Wire.read();
   int16_t GyroZ = Wire.read()<<8 | Wire.read();
 
+  // Rotate 90 degrees clockwise to account for the fact that MPU6050 isn't aligned with front of drone
+  // Will differ if using a different MPU6050 orientation
+  int16_t ax =  AccYLSB;
+  int16_t ay = -AccXLSB;
+  int16_t az =  AccZLSB;
+
+  int16_t gx =  GyroY;
+  int16_t gy = -GyroX;
+  int16_t gz =  GyroZ;  
+
   RateRoll = (float)GyroX/65.5;
   RatePitch = (float)GyroY/65.5;
   RateYaw = (float)GyroZ/65.5;
 
   // REMEMBER TO CALIBRATE OWN ACCELEROMETER VALUES HERE 14
-  AccX = (float)AccXLSB / 4096 - 0.04;
-  AccY = (float)AccYLSB / 4096 + 0.03;
-  AccZ = (float)AccZLSB / 4096 - 0.06;
+  // AccX = (float)AccXLSB / 4096 - 0.06;
+  // AccY = (float)AccYLSB / 4096 + 0.16;
+  // AccZ = (float)AccZLSB / 4096 - 0.04;
 
-  AngleRoll = atan(AccY/sqrt(AccX*AccX + AccZ*AccZ)) * 1 / (3.142/180);
-  AnglePitch = -atan(AccX/sqrt(AccY*AccY + AccZ*AccZ)) * 1 / (3.142/180);
+  AccX = (float)AccXLSB / 4096 - 0.06;
+  AccY = (float)AccYLSB / 4096 + 0.16;
+  AccZ = (float)AccZLSB / 4096 - 0.04;
+
+  AngleRoll = atan(AccY/sqrt(AccX*AccX + AccZ*AccZ)) * (1 / (3.142/180));
+  AnglePitch = -atan(AccX/sqrt(AccY*AccY + AccZ*AccZ)) * (1 / (3.142/180));
 }
 
 // PID function
@@ -188,10 +224,15 @@ Servo bottomRight;
 Servo bottomLeft;  
 
 // ESP32 MOTOR PINS
-int motor1 = 25;  // top left
-int motor2 = 26;  // top right
-int motor3 = 27;  // bottom left
-int motor4 = 33;   // bottom right
+int motor4 = 32;  // top left working
+int motor1 = 33;  // top right
+int motor3 = 18;  // bottom left
+int motor2 = 19;   // bottom right working
+
+// int motor1 = 32;  // top left working
+// int motor2 = 33;  // top right
+// int motor3 = 18;  // bottom left
+// int motor4 = 19;   // bottom right working
 
 int setMicroseconds;
 int prevMicroseconds = 0;
@@ -232,8 +273,21 @@ void setup() {
   RateCalibrationYaw /= 2000;
 
   // Once ESPNow is successfully Init, we will register for recv CB to
+  // get the status of Trasnmitted packet
+  esp_now_register_send_cb(OnDataSent);
   // get recv packer info
   esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+
+  // Register peer
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;  
+  peerInfo.encrypt = false;
+
+  // Add peer        
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    Serial.println("Failed to add peer");
+    return;
+  }
 
   // MOTOR PIN SETUP
   topLeft.attach(motor1); // CCW
@@ -311,7 +365,7 @@ void loop() {
   PrevItermRatePitch = PIDReturn[2];
 
   pid_equation(ErrorRateYaw, PRateYaw, IRateYaw, DRateYaw, PrevErrorRateYaw, PrevItermRateYaw);
-  InputYaw = PIDReturn[1];
+  InputYaw = PIDReturn[0];
   PrevErrorRateYaw = PIDReturn[1];
   PrevItermRateYaw = PIDReturn[2];
 
@@ -321,10 +375,10 @@ void loop() {
   }
 
   // Quadcopter dynamics
-  MotorInput1 = (InputThrottle - InputRoll - InputPitch - InputYaw);
-  MotorInput2 = (InputThrottle - InputRoll + InputPitch + InputYaw);
-  MotorInput3 = (InputThrottle + InputRoll + InputPitch - InputYaw);
-  MotorInput4 = (InputThrottle + InputRoll - InputPitch + InputYaw);
+  MotorInput1 = 1.024*(InputThrottle - InputRoll - InputPitch - InputYaw);
+  MotorInput2 = 1.024*(InputThrottle - InputRoll + InputPitch + InputYaw);
+  MotorInput3 = 1.024*(InputThrottle + InputRoll + InputPitch - InputYaw);
+  MotorInput4 = 1.024*(InputThrottle + InputRoll - InputPitch - InputYaw);
 
   // Motor max limiter
   if(MotorInput1 > 2000) {
@@ -371,15 +425,31 @@ void loop() {
   bottomLeft.writeMicroseconds(MotorInput3);
   bottomRight.writeMicroseconds(MotorInput4);
   
-  Serial.print("Motor1:");
-  Serial.print(MotorInput1);
-  Serial.print(", Motor2:");
-  Serial.print(MotorInput2);
-  Serial.print(", Motor3:");
-  Serial.print(MotorInput3);
-  Serial.print(", Motor4:");
-  Serial.println(MotorInput4);
+  //Motor input
+  // Serial.print("Motor1:");
+  // Serial.print(MotorInput1);
+  // Serial.print(", Motor2:");
+  // Serial.print(MotorInput2);
+  // Serial.print(", Motor3:");
+  // Serial.print(MotorInput3);
+  // Serial.print(", Motor4:");
+  // Serial.println(MotorInput4);
+
+  // // PID readings
+  // Serial.print(GyroX);
+  // Serial.print(GyroY);
+  // Serial.print(GyroZ);
   
+  // Initializing variables to send back to controller
+  onboardData.Motor_1 = KalmanAngleRoll;
+  onboardData.Motor_2 = KalmanAnglePitch;
+  onboardData.Motor_3 = MotorInput3;
+  onboardData.Motor_4 = MotorInput4;
+
+
+  // Send message via ESP-NOW
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &onboardData, sizeof(onboardData));
+
   // wait for 4 ms and finish the 250 Hz control loop to proceed to next iteration
   while(micros() - LoopTimer < 4000);
   LoopTimer = micros();
