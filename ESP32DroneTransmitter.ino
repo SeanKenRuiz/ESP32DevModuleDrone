@@ -20,6 +20,18 @@ typedef struct struct_message {
   int pitch_y_adc;
 } struct_message;
 
+typedef struct struct_onboardData {
+  int Motor_1;
+  int Motor_2;
+  int Motor_3;
+  int Motor_4;
+  float AnglePitch;
+  float PIDOutputPitch;
+  float ErrorPitch;
+} struct_onboardData;
+
+// onboardData struct_message 
+struct_onboardData onboardData;
 // Create a struct_message called myData
 struct_message myData;
 
@@ -29,6 +41,12 @@ esp_now_peer_info_t peerInfo;
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
+// callback function that will be executed when data is received
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  memcpy(&onboardData, incomingData, sizeof(onboardData));
+  
 }
 
 // CHANGE right_x_pin to 32 IF NOT WORKING WITH WIFI LATER ON (WIFI needs ADC2 pins, may need to stay on ADC1)
@@ -55,7 +73,9 @@ void setup() {
   // Once ESPNow is successfully Init, we will register for Send CB to
   // get the status of Trasnmitted packet
   esp_now_register_send_cb(OnDataSent);
-  
+  // // get recv packer info
+  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+
   // Register peer
   memcpy(peerInfo.peer_addr, broadcastAddress, 6);
   peerInfo.channel = 0;  
@@ -120,22 +140,37 @@ void loop() {
     // Map the upper half (1750 to 4095) to 1000 to 2000
     mapped_left_y_adc = map(left_y_adc, 1800, 4095, 1000, 2000);
   }
+
   // Serial print ADC values
-  Serial.print("Yaw = ");
-  Serial.print(mapped_left_x_adc);
+  // Serial.print("Yaw = ");
+  // Serial.print(mapped_left_x_adc);
+  // Serial.print("\t");
+  // Serial.print("Throttle = ");
+  // Serial.print(mapped_left_y_adc);
+
+  // Serial.print("\t");
+  // Serial.print("Roll = ");
+  // Serial.print(mapped_right_x_adc);
+  // Serial.print("\t");
+  // Serial.print("Pitch = ");
+  // Serial.println(mapped_right_y_adc);
+
+  // Print Onboard Motor values
+  Serial.print("Motor 1 = ");
+  Serial.print(onboardData.Motor_1);
   Serial.print("\t");
-  Serial.print("Throttle = ");
-  Serial.print(mapped_left_y_adc);
+  Serial.print("Motor 2 = ");
+  Serial.print(onboardData.Motor_2);
 
   Serial.print("\t");
-  Serial.print("Roll = ");
-  Serial.print(mapped_right_x_adc);
+  Serial.print("Motor 3 = ");
+  Serial.print(onboardData.Motor_3);
   Serial.print("\t");
-  Serial.print("Pitch = ");
-  Serial.println(mapped_right_y_adc);
+  Serial.print("Motor 4 = ");
+  Serial.println(onboardData.Motor_4);
 
   // Set values to send (GOING TO ONLY SEND ADC VALUES SINCE CONVERSION WILL BE EASIER with map())
-  myData.throttle_x_adc, mapped_left_x_adc;
+  myData.throttle_x_adc = mapped_left_x_adc;
   myData.throttle_y_adc = mapped_left_y_adc;
   myData.pitch_x_adc = mapped_right_x_adc;
   myData.pitch_y_adc = mapped_right_y_adc;
