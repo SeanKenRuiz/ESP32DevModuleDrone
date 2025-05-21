@@ -92,6 +92,16 @@ float KalmanAngleRoll = 0, KalmanUncertaintyAngleRoll = 2*2;
 float KalmanAnglePitch = 0, KalmanUncertaintyAnglePitch = 2*2;
 float Kalman1DOutput[] = {0, 0};
 
+// Outer-loop PID Controller Variables
+float DesiredAngleRoll, DesiredAnglePitch;
+float ErrorAngleRoll, ErrorAnglePitch;
+float PrevErrorAngleRoll, PrevErrorAnglePitch;
+float PrevItermAngleRoll, PrevItermAnglePitch;
+
+float PAngleRoll=0; float PAnglePitch=PAngleRoll;
+float IAngleRoll=0; float IAnglePitch=IAngleRoll;
+float DAngleRoll=0; float DAnglePitch=DAngleRoll;
+
 // function to calculate the predicted angle and uncretainty using Kalman equations
 void kalman_1d(float &KalmanState, float &KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
   // Predict the current state
@@ -104,9 +114,12 @@ void kalman_1d(float &KalmanState, float &KalmanUncertainty, float KalmanInput, 
   KalmanState = KalmanState + KalmanGain * (KalmanMeasurement - KalmanState);
   // Update the uncertainty of predicted state 
   KalmanUncertainty = (1 - KalmanGain) * KalmanUncertainty;
+
+  Kalman1DOutput[0]=KalmanState; 
+  Kalman1DOutput[1]=KalmanUncertainty;
 }
 
-// PID Controller Variables
+// Inner-loop PID Controller Variables
 float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
 float ErrorRateRoll, ErrorRatePitch, ErrorRateYaw;
 float InputRoll, InputThrottle, InputPitch, InputYaw;
@@ -114,9 +127,9 @@ float PrevErrorRateRoll, PrevErrorRatePitch, PrevErrorRateYaw;
 float PrevItermRateRoll, PrevItermRatePitch, PrevItermRateYaw;
 float PIDReturn[] = {0,0,0};
 
-float PRateRoll = 4.0; float PRatePitch = PRateRoll; float PRateYaw = 0;
-float IRateRoll = 0.00; float IRatePitch = IRateRoll; float IRateYaw = 0.0;
-float DRateRoll = 0.12; float DRatePitch = DRateRoll; float DRateYaw = 0.0;
+float PRateRoll = 2.5; float PRatePitch = PRateRoll; float PRateYaw = 0;
+float IRateRoll = 0; float IRatePitch = IRateRoll; float IRateYaw = 0.0;
+float DRateRoll = 0; float DRatePitch = DRateRoll; float DRateYaw = 0.0;
 
 float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
 
@@ -160,14 +173,13 @@ void gyro_signals(void){
   int16_t GyroZ = Wire.read()<<8 | Wire.read();
 
   // Rotate 90 degrees clockwise to account for the fact that MPU6050 isn't aligned with front of drone
-  // Will differ if using a different MPU6050 orientation
-  int16_t ax =  AccYLSB;
-  int16_t ay = -AccXLSB;
-  int16_t az =  AccZLSB;
+  // int16_t ax =  AccYLSB;
+  // int16_t ay = -AccXLSB;
+  // int16_t az =  AccZLSB;
 
-  int16_t gx =  GyroY;
-  int16_t gy = -GyroX;
-  int16_t gz =  GyroZ;  
+  // int16_t gx =  GyroY;
+  // int16_t gy = -GyroX;
+  // int16_t gz =  GyroZ;  
 
   RateRoll = (float)GyroX/65.5;
   RatePitch = (float)GyroY/65.5;
@@ -212,7 +224,10 @@ void pid_equation(float Error, float P, float I, float D, float PrevError, float
 
 void reset_pid(void) {  // PID reset function when motors turned off
   PrevErrorRateRoll = 0, PrevErrorRatePitch = 0, PrevErrorRateYaw = 0;
-float PrevItermRateRoll = 0, PrevItermRatePitch = 0, PrevItermRateYaw = 0;
+  PrevItermRateRoll = 0, PrevItermRatePitch = 0, PrevItermRateYaw = 0;
+
+  PrevErrorAngleRoll=0; PrevErrorAnglePitch=0;    
+  PrevItermAngleRoll=0; PrevItermAnglePitch=0;
 }
 
 
@@ -224,10 +239,10 @@ Servo bottomRight;
 Servo bottomLeft;  
 
 // ESP32 MOTOR PINS
-int motor4 = 32;  // top left working
-int motor1 = 33;  // top right
-int motor3 = 18;  // bottom left
-int motor2 = 19;   // bottom right working
+int motor3 = 32;  // top left working
+int motor4 = 33;  // top right
+int motor2 = 18;  // bottom left
+int motor1 = 19;   // bottom right working
 
 // int motor1 = 32;  // top left working
 // int motor2 = 33;  // top right
@@ -285,7 +300,7 @@ void setup() {
 
   // Add peer        
   if (esp_now_add_peer(&peerInfo) != ESP_OK){
-    Serial.println("Failed to add peer");
+    // Serial.println("Failed to add peer");
     return;
   }
 
@@ -342,32 +357,48 @@ void loop() {
   Serial.println(KalmanAnglePitch);
   */
 
-  // Calculate the desired roll, pitch, and yaw rates
-  DesiredRateRoll = 0.15 * (myData.pitch_x_adc - 1500);
-  DesiredRatePitch = 0.15 * (myData.pitch_y_adc - 1500);
+  // Calculate the desired angle roll, pitch, and yaw rates
+  DesiredAngleRoll = 0.10 * (myData.pitch_x_adc - 1500);
+  DesiredAnglePitch = 0.10 * (myData.pitch_y_adc - 1500);
   InputThrottle = myData.throttle_y_adc;
   DesiredRateYaw = 0.15 * (myData.throttle_y_adc - 1500);
   
   // Calculate the errors for the PID calculations
-  ErrorRateRoll = DesiredRateRoll - RateRoll;
-  ErrorRatePitch = DesiredRatePitch - RatePitch;
-  ErrorRateYaw = DesiredRateYaw - RateYaw;
-
-  // Execute the PID Calculations
-  pid_equation(ErrorRateRoll, PRateRoll, IRateRoll, DRateRoll, PrevErrorRateRoll, PrevItermRateRoll);
-  InputRoll = PIDReturn[0];
-  PrevErrorRateRoll = PIDReturn[1];
-  PrevItermRateRoll = PIDReturn[2];
+  ErrorAngleRoll = DesiredAngleRoll - KalmanAngleRoll;
+  ErrorRatePitch = DesiredAnglePitch - DesiredAnglePitch;
   
-  pid_equation(ErrorRatePitch, PRatePitch, IRatePitch, DRatePitch, PrevErrorRatePitch, PrevItermRatePitch);
-  InputPitch = PIDReturn[0];
-  PrevErrorRatePitch = PIDReturn[1];
-  PrevItermRatePitch = PIDReturn[2];
+  // Execute outer-loop PID calculations
+  pid_equation(ErrorAngleRoll, PAngleRoll, IAngleRoll, DAngleRoll, PrevErrorAngleRoll, PrevItermAngleRoll);     
+  DesiredRateRoll=PIDReturn[0]; 
+  PrevErrorAngleRoll=PIDReturn[1];
+  PrevItermAngleRoll=PIDReturn[2];
 
-  pid_equation(ErrorRateYaw, PRateYaw, IRateYaw, DRateYaw, PrevErrorRateYaw, PrevItermRateYaw);
-  InputYaw = PIDReturn[0];
-  PrevErrorRateYaw = PIDReturn[1];
-  PrevItermRateYaw = PIDReturn[2];
+  pid_equation(ErrorAnglePitch, PAnglePitch, IAnglePitch, DAnglePitch, PrevErrorAnglePitch, PrevItermAnglePitch);
+  DesiredRatePitch=PIDReturn[0]; 
+  PrevErrorAnglePitch=PIDReturn[1];
+  PrevItermAnglePitch=PIDReturn[2];
+
+
+  ErrorRateRoll=DesiredRateRoll-RateRoll;
+  ErrorRatePitch=DesiredRatePitch-RatePitch;
+  ErrorRateYaw=DesiredRateYaw-RateYaw;
+
+  // Execute inner-loop PID calculations
+  pid_equation(ErrorRateRoll, PRateRoll, IRateRoll, DRateRoll, PrevErrorRateRoll, PrevItermRateRoll);
+  InputRoll=PIDReturn[0];
+  PrevErrorRateRoll=PIDReturn[1]; 
+  PrevItermRateRoll=PIDReturn[2];
+  pid_equation(ErrorRatePitch, PRatePitch,IRatePitch, DRatePitch, PrevErrorRatePitch, PrevItermRatePitch);
+  InputPitch=PIDReturn[0]; 
+  PrevErrorRatePitch=PIDReturn[1]; 
+  PrevItermRatePitch=PIDReturn[2];
+  pid_equation(ErrorRateYaw, PRateYaw,IRateYaw, DRateYaw, PrevErrorRateYaw, PrevItermRateYaw);
+  InputYaw=PIDReturn[0]; 
+  PrevErrorRateYaw=PIDReturn[1]; 
+  PrevItermRateYaw=PIDReturn[2];
+  
+
+
 
   // Throttle output limiter
   if(InputThrottle > 1800) {
@@ -375,10 +406,11 @@ void loop() {
   }
 
   // Quadcopter dynamics
-  MotorInput1 = 1.024*(InputThrottle - InputRoll - InputPitch - InputYaw);
-  MotorInput2 = 1.024*(InputThrottle - InputRoll + InputPitch + InputYaw);
-  MotorInput3 = 1.024*(InputThrottle + InputRoll + InputPitch - InputYaw);
-  MotorInput4 = 1.024*(InputThrottle + InputRoll - InputPitch - InputYaw);
+  MotorInput1 = 1.024*(InputThrottle - InputRoll + InputPitch - InputYaw); // TR
+  MotorInput2 = 1.024*(InputThrottle - InputRoll - InputPitch + InputYaw); // BR
+  MotorInput3 = 1.024*(InputThrottle + InputRoll - InputPitch - InputYaw); // BL
+  MotorInput4 = 1.024*(InputThrottle + InputRoll + InputPitch + InputYaw); // TL
+
 
   // Motor max limiter
   if(MotorInput1 > 2000) {
